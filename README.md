@@ -3,6 +3,7 @@
 
 **Kuon Node Project** は、**オープンソースのヴィジュアルノベルゲームの台本**です。  
 **「架空の1990年代日本を舞台とした、ノスタルジーサイエンスフィクション」**を目指しています。
+
 どんな雰囲気の世界なのか手っ取り早くご覧になりたい方はこちら->
 
 https://github.com/SideNoteJP/KuonNodeProject_OriginalScripts/wiki/GLOSSARY
@@ -77,12 +78,6 @@ GitHub Actionsによる処理状況の自動監視・レポート生成。
 1. **[GLOSSARY.md](GLOSSARY.md)** - 整理された用語集を閲覧
 2. **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - 5分セットアップガイド
 3. **Issues** - 自動生成される処理状況レポート
-
-### 💡 **こんな方におすすめ**
-- 世界観の設定を整理したい方
-- GitHub Wikiで用語集を公開したい方  
-- AIを活用して効率化したい方
-- コスト$0でプロ品質の文書管理をしたい方
 
 **🚀 今すぐ開始**: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)をご確認ください！
 
