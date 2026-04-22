@@ -1,0 +1,81 @@
+name: "📖 用語追加・編集"
+description: "新しい用語の追加や既存用語の修正・追加情報"
+title: "[用語] "
+labels: ["terminology", "ai-processing"]
+assignees: []
+body:
+  - type: input
+    id: term-name
+    attributes:
+      label: "用語名"
+      description: "追加・編集したい用語名を入力してください"
+      placeholder: "例：メイドロイド、Kuon Node、火力正義-V1"
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: category
+    attributes:
+      label: "カテゴリ（わからなければスキップOK）"
+      description: "この用語が属すると思うカテゴリを選んでください"
+      options:
+        - わからない・自動判定してほしい
+        - システム・インフラ
+        - ハードウェア
+        - 接続規格・技術
+        - 商業・文化
+        - 人物・キャラクター
+        - 組織・団体
+        - OS・ソフトウェア
+        - 法制度・政治
+    validations:
+      required: false
+      
+  - type: textarea
+    id: description
+    attributes:
+      label: "説明"
+      description: "自由な文章で説明してください。箇条書き、文章、どんな形でもOKです"
+      placeholder: |
+        例：
+        メイドロイドは家事をお手伝いしてくれるアンドロイドです。
+        - 首の後ろにカセットを挿入できます
+        - 充電は5時間くらいかかります
+        - 大学生がバイト代で買えるくらいの値段です
+    validations:
+      required: true
+      
+  - type: input
+    id: related-terms
+    attributes:
+      label: "関連する用語（あれば）"
+      description: "この用語と関係のある他の用語があれば教えてください"
+      placeholder: "例：ミニマルコンピュータ、TRANS-S、データカセット"
+    validations:
+      required: false
+      
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "その他の情報"
+      description: "価格、仕様、場所、年齢、色、サイズなど、何でも追加情報があれば"
+      placeholder: |
+        例：
+        - 価格：大学生のバイト代で買える
+        - サイズ：人間と同じくらい
+        - 色：様々
+        - 設置場所：京都
+        - 年齢：24歳
+    validations:
+      required: false
+      
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: "確認事項"
+      description: "以下を確認してください"
+      options:
+        - label: "この用語は「Kuon Node Project」の世界観に関連しています"
+          required: true
+        - label: "AIが自動的に適切なMarkdown形式に整理してくれることを理解しています"
+          required: false

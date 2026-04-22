@@ -1,0 +1,198 @@
+name: "🤖 AI用語集処理システム"
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  process_terminology:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'terminology')
+    
+    steps:
+    - name: "📥 リポジトリのチェックアウト"
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: "🔧 Node.js環境のセットアップ"
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: "📋 Issueデータの抽出"
+      id: extract_issue_data
+      run: |
+        echo "Extracting issue data..."
+        echo "ISSUE_TITLE=${{ github.event.issue.title }}" >> $GITHUB_ENV
+        echo "ISSUE_BODY<<EOF" >> $GITHUB_ENV
+        echo "${{ github.event.issue.body }}" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+        echo "ISSUE_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
+        
+    - name: "🤖 OpenAI APIによる用語構造化"
+      id: ai_processing
+      run: |
+        cat > process_terminology.js << 'EOF'
+        const https = require('https');
+        
+        const openaiApiKey = process.env.OPENAI_API_KEY;
+        const issueBody = process.env.ISSUE_BODY;
+        
+        const prompt = `
+        あなたは「Kuon Node Project」の用語集管理AIです。
+        以下のGitHub Issue内容を分析し、適切なMarkdown形式に構造化してください。
+        
+        Issue内容:
+        ${issueBody}
+        
+        出力形式:
+        # {用語名}
+        
+        {説明文（自然な文章で）}
+        
+        ## 基本情報
+        **カテゴリ**: {自動判定されたカテゴリ}
+        **関連用語**: {関連用語リスト}
+        
+        ## 詳細
+        {詳細情報があれば整理して記載}
+        
+        判定基準:
+        - システム・インフラ: Kuon Node, 端末類, ノード類
+        - ハードウェア: メイドロイド, ミニコン類, データカセット  
+        - 接続規格・技術: TRANS-S, 火力正義, PDAT
+        - 商業・文化: パーツ天国, のっぽさん, 白教
+        - 人物・キャラクター: 西園寺久遠, ヨアヒム
+        - 組織・団体: KIO, CENI
+        - OS・ソフトウェア: MinimalOS, 縁環端末
+        - 法制度・政治: 日本電波電信協会法改正案
+        
+        注意: 必ずMarkdown形式で出力し、元の情報を損なわないよう注意してください。
+        `;
+        
+        const data = JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system", 
+              content: "あなたは技術文書の構造化専門AIです。与えられた情報を正確にMarkdown形式で整理してください。"
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          max_tokens: 1000,
+          temperature: 0.3
+        });
+        
+        const options = {
+          hostname: 'api.openai.com',
+          path: '/v1/chat/completions',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Length': data.length
+          }
+        };
+        
+        const req = https.request(options, (res) => {
+          let body = '';
+          res.on('data', (chunk) => { body += chunk; });
+          res.on('end', () => {
+            try {
+              const response = JSON.parse(body);
+              const structuredContent = response.choices[0].message.content;
+              console.log("::set-output name=structured_markdown::" + encodeURIComponent(structuredContent));
+            } catch (error) {
+              console.error('Error parsing OpenAI response:', error);
+              process.exit(1);
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          console.error('Error calling OpenAI API:', error);
+          process.exit(1);
+        });
+        
+        req.write(data);
+        req.end();
+        EOF
+        
+        node process_terminology.js
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        ISSUE_BODY: ${{ env.ISSUE_BODY }}
+        
+    - name: "📝 用語集ファイルの更新"
+      id: update_glossary
+      run: |
+        # structured_markdownの取得
+        STRUCTURED_CONTENT=$(echo "${{ steps.ai_processing.outputs.structured_markdown }}" | node -e "console.log(decodeURIComponent(require('fs').readFileSync(0, 'utf8').trim()))")
+        
+        # GLOSSARY.mdに追加
+        if [ -f "GLOSSARY.md" ]; then
+          echo "" >> GLOSSARY.md
+          echo "---" >> GLOSSARY.md
+          echo "" >> GLOSSARY.md
+          echo "$STRUCTURED_CONTENT" >> GLOSSARY.md
+        else
+          echo "$STRUCTURED_CONTENT" > GLOSSARY.md
+        fi
+        
+        # 変更をコミット
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add GLOSSARY.md
+        git commit -m "🤖 AI処理による用語追加: Issue #${{ env.ISSUE_NUMBER }}" || echo "No changes to commit"
+        git push || echo "No changes to push"
+        
+    - name: "💬 Issueへのコメント"
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const structuredContent = decodeURIComponent('${{ steps.ai_processing.outputs.structured_markdown }}');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🤖 AI処理完了
+
+用語の構造化が完了しました！以下の形式で用語集に追加されました：
+
+<details>
+<summary>📋 構造化された内容を確認</summary>
+
+\`\`\`markdown
+${structuredContent}
+\`\`\`
+
+</details>
+
+✅ **完了したタスク:**
+- Issue内容の分析
+- 適切なカテゴリの自動判定  
+- Markdown形式への構造化
+- GLOSSARY.mdへの追加
+
+📖 **確認方法:**
+[GLOSSARY.md](../blob/main/GLOSSARY.md) ファイルで追加された内容を確認できます。
+
+🔄 **修正が必要な場合:**
+このIssueを編集するか、新しいIssueを作成してください。AIが再度処理します。`
+          });
+          
+    - name: "🏷️ Issueラベルの更新"
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.addLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: ['✅ processed', '🤖 ai-completed']
+          });

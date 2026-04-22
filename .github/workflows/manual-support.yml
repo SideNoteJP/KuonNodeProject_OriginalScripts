@@ -1,0 +1,160 @@
+name: "📋 手動処理支援"
+
+on:
+  push:
+    branches: [testing]
+  schedule:
+    - cron: '0 0 * * *'  # 毎日9時(JST)に状況確認
+  workflow_dispatch:
+
+jobs:
+  analyze_testing_branch:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: "📥 チェックアウト"
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: "🔍 変更分析"
+      id: analyze
+      run: |
+        # testing branchが存在するかチェック
+        if ! git show-ref --verify --quiet refs/remotes/origin/testing; then
+          echo "testing branchが存在しません"
+          echo "has_testing_branch=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # mainとtestingの差分を確認
+        COMMITS=$(git rev-list --count main..origin/testing)
+        CHANGED_FILES=$(git diff --name-only main..origin/testing | head -10)
+        LAST_COMMIT=$(git log origin/testing --oneline -1 --format="%h %s" || echo "なし")
+        
+        echo "commit_count=$COMMITS" >> $GITHUB_OUTPUT
+        echo "has_testing_branch=true" >> $GITHUB_OUTPUT
+        echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
+        
+        # 優先度判定
+        if [ $COMMITS -gt 10 ]; then
+          PRIORITY="🔴 高"
+        elif [ $COMMITS -gt 5 ]; then
+          PRIORITY="🟡 中"
+        elif [ $COMMITS -gt 0 ]; then
+          PRIORITY="🟢 低"
+        else
+          PRIORITY="✅ なし"
+        fi
+        echo "priority=$PRIORITY" >> $GITHUB_OUTPUT
+        
+        # 変更ファイル一覧
+        echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: "📊 処理レポート作成"
+      if: steps.analyze.outputs.has_testing_branch == 'true' && steps.analyze.outputs.commit_count != '0'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const commitCount = '${{ steps.analyze.outputs.commit_count }}';
+          const priority = '${{ steps.analyze.outputs.priority }}';
+          const lastCommit = '${{ steps.analyze.outputs.last_commit }}';
+          const changedFiles = `${{ steps.analyze.outputs.changed_files }}`;
+          
+          const report = `## 📋 Processing Status Report
+          
+          **生成日時**: ${new Date().toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}
+          
+          ### 📊 状況サマリー
+          - **処理待ちコミット数**: ${commitCount}件
+          - **処理優先度**: ${priority}
+          - **最新コミット**: ${lastCommit}
+          
+          ### 📝 主な変更ファイル
+          \`\`\`
+          ${changedFiles || '変更ファイルなし'}
+          \`\`\`
+          
+          ### 🚀 推奨アクション
+          ${commitCount > 10 ? 
+            '⚠️ **至急処理推奨**: testing branchに多数の変更が蓄積されています。[LOCAL_PROCESSING_GUIDE.md](../blob/main/LOCAL_PROCESSING_GUIDE.md)の手順に従って処理してください。' : 
+            commitCount > 5 ? 
+            '📅 **今週中に処理**: 適度な変更が蓄積されています。時間のある時に処理をお願いします。' : 
+            commitCount > 0 ?
+            '✅ **余裕のある時に処理**: 少量の変更です。急ぎではありませんが、定期的な処理をお願いします。' :
+            '🎉 **処理完了**: testing branchに未処理の変更はありません。'}
+          
+          ### 🔧 処理手順
+          1. リポジトリをクローン: \`git clone [リポジトリURL]\`
+          2. testing branchに切り替え: \`git checkout testing\`
+          3. [LOCAL_PROCESSING_GUIDE.md](../blob/main/LOCAL_PROCESSING_GUIDE.md)の手順に従って処理
+          4. 処理完了後にmain branchに統合・プッシュ
+          
+          ---
+          *このレポートは自動生成されました。詳細は[GITHUB_ACTIONS_SPEC.md](../blob/main/GITHUB_ACTIONS_SPEC.md)をご確認ください。*`;
+          
+          // 既存の処理レポートIssueがあるかチェック
+          const existingIssues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: 'processing-report',
+            state: 'open'
+          });
+          
+          if (existingIssues.data.length > 0) {
+            // 既存Issueを更新
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existingIssues.data[0].number,
+              title: \`📋 処理状況レポート (\${new Date().toLocaleDateString('ja-JP')})\`,
+              body: report
+            });
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existingIssues.data[0].number,
+              body: \`🔄 **レポート更新**: \${new Date().toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})} - ${commitCount}件の処理待ちコミットがあります\`
+            });
+          } else {
+            // 新しいIssueを作成
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: \`📋 処理状況レポート (\${new Date().toLocaleDateString('ja-JP')})\`,
+              body: report,
+              labels: ['processing-report', \`priority-\${priority.includes('高') ? 'high' : priority.includes('中') ? 'medium' : 'low'}\`]
+            });
+          }
+
+    - name: "✅ 処理完了通知"
+      if: steps.analyze.outputs.has_testing_branch == 'true' && steps.analyze.outputs.commit_count == '0'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // 既存の処理レポートIssueをクローズ
+          const existingIssues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: 'processing-report',
+            state: 'open'
+          });
+          
+          for (const issue of existingIssues.data) {
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed'
+            });
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: \`✅ **処理完了確認**: testing branchに未処理の変更がなくなりました。お疲れ様でした！ (\${new Date().toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})})\`
+            });
+          }
